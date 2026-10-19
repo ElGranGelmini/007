@@ -1,0 +1,1 @@
+window.SHURMAN={"updated": "2026-10-19", "last": 349, "complete": 13, "means": {"entries": 7.31, "finished": 4.62, "withdrawn": 2.54, "advance": 24.5}, "forecast": "Reservada por privacidad", "mode": "Histórico importado"};
