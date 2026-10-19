@@ -123,24 +123,83 @@ def forecast_details(a,target,simulations=6000):
     top=sorted(hits,key=lambda d:(-hits[d],d))[:2]
     return {"candidates":top,"counts":dict(hits),"simulations":simulations}
 
+def preparation_dates(a,result):
+    # Planning policy requested by the owner: use an early quantile rather than
+    # present modal dates as a deadline. This changes the decision, not the model.
+    # The empirical 20th percentile is not a calibrated real-world probability.
+    threshold=result["simulations"]*.20
+    cumulative=0; first=None
+    for day,count in sorted(result["counts"].items()):
+        cumulative+=count
+        if cumulative>=threshold:
+            first=day
+            break
+    if first is None: return []
+    dates=[first]; dt=datetime.fromisoformat(first)
+    while dt<datetime(2026,11,30):
+        dt+=timedelta(days=1)
+        if session_day(dt,a.get("calendar",{})):
+            dates.append(dt.date().isoformat())
+            break
+    return dates
+
 def forecast(a,target):
     result=forecast_details(a,target)
     if not result: return "Sin estimación futura fiable"
-    # These are the two most frequent dates in the model, not interval endpoints
-    # and not a calibrated statement that other dates are impossible.
-    dates=[datetime.fromisoformat(d).strftime("%d/%m/%Y") for d in sorted(result["candidates"])]
-    return " o ".join(dates)+" · días candidatos"
+    dates=[datetime.fromisoformat(d).strftime("%d/%m/%Y") for d in preparation_dates(a,result)]
+    return " / ".join(dates)+" · margen para ir preparado"
+
+def probability_cards(result):
+    if not result: return []
+    counts=result["counts"]; total=result["simulations"]
+    top=sorted(counts,key=lambda d:(-counts[d],d))[:5]
+    # Include uncompleted trajectories in Other, never silently renormalize.
+    buckets=[counts[d] for d in top]+[total-sum(counts[d] for d in top)]
+    units=[n*1000//total for n in buckets]
+    remainder=1000-sum(units)
+    order=sorted(range(len(buckets)),key=lambda i: (-(buckets[i]*1000%total),i))
+    for i in order[:remainder]: units[i]+=1
+    cards=[{"date":d,"percent":units[i]/10} for i,d in enumerate(top)]
+    cards.sort(key=lambda c:c["date"])
+    cards.append({"date":None,"percent":units[-1]/10})
+    return cards
+
+def next_call(rows,after,target=None):
+    calls={}
+    for r in rows:
+        text=html.unescape(re.sub("<[^>]+>"," ",r["mensaje"])).lower()
+        if "convocatoria" not in text: continue
+        matches=list(re.finditer(r"(\d{1,2})\s*/\s*(\d{1,2})\s*/\s*(\d{4})",text))
+        for i,m in enumerate(matches):
+            try: day=datetime(int(m[3]),int(m[2]),int(m[1])).date().isoformat()
+            except ValueError: continue
+            segment=text[m.end():matches[i+1].start() if i+1<len(matches) else len(text)]
+            bounds=re.search(r"del\s+n\s*[º°o.]?\s*(\d+)\s+al\s+n\s*[º°o.]?\s*(\d+)",segment)
+            if not bounds: continue
+            low,high=map(int,bounds.groups())
+            if low>high: continue
+            hour=re.search(r"(?:a las\s+)?(\d{1,2})[:.](\d{2})\s*(?:h|horas)",segment)
+            calls[day]={"date":day,"from":low,"to":high,"time":f"{int(hour[1]):02d}:{hour[2]}" if hour else None}
+    future=[day for day in calls if day>after]
+    if not future: return None
+    call=calls[min(future)]
+    # Do not disclose a literal secret even if it coincides with a range endpoint.
+    if target and int(target) in (call["from"],call["to"]):
+        call["from"]=None;call["to"]=None
+    return call
 
 def build(source,out):
-    a=analyze(parse(source)); target=os.environ.get("TARGET_NUMBER")
-    public={"updated":a["latest"],"last":a["last_finished"],"complete":a["complete"],"means":a["means"],"forecast":"Reservada por privacidad", "mode":"Histórico importado"}
+    rows=parse(source); a=analyze(rows); target=os.environ.get("TARGET_NUMBER")
+    public={"updated":a["latest"],"last":a["last_finished"],"complete":a["complete"],"means":a["means"],"forecast":"Reservada por privacidad", "mode":"Histórico importado","probabilities":[],"next_call":next_call(rows,a["latest"],target)}
     # A secret matching a public observation must never be emitted.
     if target and public["last"]==int(target): public["last"]=None
     if os.environ.get("LIVE_MODE")=="1": public["mode"]="Consulta oficial verificada"
     if target:
         private=forecast(a,int(target))
         if os.environ.get("PRIVATE_REPORT"): Path(os.environ["PRIVATE_REPORT"]).write_text(private)
-        if os.environ.get("PUBLISH_COARSE_FORECAST")=="true": public["forecast"]=private
+        if os.environ.get("PUBLISH_COARSE_FORECAST")=="true":
+            public["forecast"]=private
+            public["probabilities"]=probability_cards(forecast_details(a,int(target)))
     out=Path(out); out.mkdir(exist_ok=True)
     payload=json.dumps(public,ensure_ascii=False)
     if target and target in payload: raise ValueError("Publicación bloqueada por privacidad")
