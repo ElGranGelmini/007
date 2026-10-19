@@ -59,8 +59,8 @@ def forecast(a,target):
             dt+=timedelta(days=1)
             if dt.weekday() in (0,1,2) or dt.date().isoformat() in ("2026-11-05","2026-11-12","2026-11-19"): sessions-=1
         dates.append(dt)
-    months=[d.strftime("%m/%Y") for d in dates]
-    return " — ".join(dict.fromkeys(months)) + " · escenario orientativo"
+    labels=[d.strftime("%d/%m/%Y") for d in dates]
+    return " o ".join(dict.fromkeys(labels)) + " · escenarios orientativos"
 
 def build(source,out):
     a=analyze(parse(source)); target=os.environ.get("TARGET_NUMBER")
