@@ -1,4 +1,5 @@
-import json, re, html, os, statistics, math
+import json, re, html, os, statistics, math, random
+from collections import Counter
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -39,28 +40,96 @@ def analyze(rows):
         if not d["entries"]: continue
         f=d["frontier"]; advance=None if previous is None else f-previous
         previous=f
-        result.append({**{k:len(d[k]) for k in ("entries","finished","withdrawn","excluded","absent")},"date":d["date"],"closed":d["closed"] and d["started"],"advance":advance})
+        result.append({**{k:len(d[k]) for k in ("entries","finished","withdrawn","excluded","absent")},"date":d["date"],"closed":d["closed"] and d["started"],"advance":advance,"frontier":f})
     complete=[d for d in result if d["closed"]]
     means={k:round(statistics.mean(d[k] for d in complete),2) if complete else None for k in ("entries","finished","withdrawn")}
     advances=[d["advance"] for d in complete if d["advance"] is not None and d["advance"]>0]
     means["advance"]=round(statistics.mean(advances),2) if advances else None
-    return {"days":result,"means":means,"latest":latest,"frontier":frontier,"last_finished":last_finished,"complete":len(complete)}
+    return {"days":result,"means":means,"latest":latest,"frontier":frontier,"last_finished":last_finished,"complete":len(complete),"calendar":read_calendar(rows)}
+
+def read_calendar(rows):
+    announced=set(); extra=set()
+    for r in rows:
+        text=html.unescape(re.sub("<[^>]+>"," ",r["mensaje"])).lower()
+        if "convocatoria" in text:
+            for day,month,year in re.findall(r"(\d{1,2})\s*/\s*(\d{1,2})\s*/\s*(\d{4})",text):
+                try: announced.add(datetime(int(year),int(month),int(day)).date().isoformat())
+                except ValueError: pass
+        # Explicit exceptional sessions from the tribunal's announcement.
+        match=re.search(r"jueves días ([\d, y]+) de noviembre",text)
+        if match:
+            year=datetime.strptime(r["fecha"],"%H:%M:%S %d-%m-%Y").year
+            for day in re.findall(r"\d+",match[1]):
+                extra.add(datetime(year,11,int(day)).date().isoformat())
+    return {"announced":sorted(announced),"extra":sorted(extra)}
+
+# Madrid public holidays: municipal/regional calendar. Exclusion is a scheduling
+# assumption, overridden by an explicit tribunal convocatoria on that date.
+HOLIDAYS={"2026-10-12","2026-11-02","2026-11-09"}
+
+def session_day(dt,calendar):
+    key=dt.date().isoformat()
+    if key in calendar.get("announced",[]) or key in calendar.get("extra",[]): return True
+    return key not in HOLIDAYS and dt.weekday() in (0,1,2)
+
+def training_days(a):
+    return [d for d in a["days"] if d["closed"] and d["advance"] is not None and d["advance"]>=0]
+
+def distribution(history,weekday):
+    # Recent observations get more weight; keep a pooled contribution because
+    # weekday samples are small. Unknown weekdays use the pooled sample only.
+    weights=[2**(-(len(history)-1-i)/6) for i in range(len(history))]
+    same=[i for i,d in enumerate(history) if datetime.fromisoformat(d["date"]).weekday()==weekday]
+    total=sum(weights); same_total=sum(weights[i] for i in same)
+    strength=len(same)/(len(same)+1) if same else 0
+    probabilities=[(1-strength)*w/total+(strength*w/same_total if i in same else 0) for i,w in enumerate(weights)]
+    return [d["advance"] for d in history],probabilities
+
+def expected_advance(history,weekday):
+    values,weights=distribution(history,weekday)
+    return sum(v*w for v,w in zip(values,weights))
+
+def forecast_details(a,target,simulations=6000):
+    history=training_days(a)
+    if len(history)<5 or target<=a["frontier"]: return None
+    calendar=a.get("calendar",{}); anchor=datetime.fromisoformat(a["latest"])
+    # The explicit calendar and holiday assumptions are scoped to this phase.
+    limit=datetime(2026,11,30)
+    if anchor>limit: return None
+    future=[]; dt=anchor
+    current=next((d for d in reversed(a["days"]) if d["date"]==a["latest"]),None)
+    if current and not current["closed"]:
+        # Sample a full day's advance and subtract the progress already observed.
+        # Missing previous-day reference: wait for the next completed day.
+        if current.get("advance") is None: return None
+        future.append((dt,current["advance"]))
+    while dt<limit:
+        dt+=timedelta(days=1)
+        if session_day(dt,calendar): future.append((dt,0))
+    pools={w:distribution(history,w) for w in range(7)}
+    rng=random.Random(20261019); hits=Counter()
+    for _ in range(simulations):
+        remaining=target-a["frontier"]
+        # Shared trajectory uncertainty prevents treating the estimated mean as exact.
+        drift=rng.triangular(.85,1.15,1)
+        for dt,consumed in future:
+            values,weights=pools[dt.weekday()]
+            advance=max(0,rng.choices(values,weights=weights,k=1)[0]*drift-consumed)
+            remaining-=advance
+            if remaining<=0:
+                hits[dt.date().isoformat()]+=1
+                break
+    if sum(hits.values())<simulations*.95: return None
+    top=sorted(hits,key=lambda d:(-hits[d],d))[:2]
+    return {"candidates":top,"counts":dict(hits),"simulations":simulations}
 
 def forecast(a,target):
-    # Scenario envelope, not a calibrated confidence interval. No target-dependent public fields.
-    rates=[d["advance"] for d in a["days"] if d["closed"] and d["advance"] and d["advance"]>0]
-    if len(rates)<5 or target<=a["frontier"]: return "Sin estimación futura fiable"
-    rates.sort(); slow=rates[len(rates)//4]; fast=rates[3*len(rates)//4]
-    dates=[]
-    for rate in (fast,slow):
-        sessions=math.ceil((target-a["frontier"])/rate); dt=datetime.fromisoformat(a["latest"])
-        # Observed Mon-Wed cadence; explicitly a scenario, not an official calendar.
-        while sessions:
-            dt+=timedelta(days=1)
-            if dt.weekday() in (0,1,2) or dt.date().isoformat() in ("2026-11-05","2026-11-12","2026-11-19"): sessions-=1
-        dates.append(dt)
-    labels=[d.strftime("%d/%m/%Y") for d in dates]
-    return " o ".join(dict.fromkeys(labels)) + " · escenarios orientativos"
+    result=forecast_details(a,target)
+    if not result: return "Sin estimación futura fiable"
+    # These are the two most frequent dates in the model, not interval endpoints
+    # and not a calibrated statement that other dates are impossible.
+    dates=[datetime.fromisoformat(d).strftime("%d/%m/%Y") for d in sorted(result["candidates"])]
+    return " o ".join(dates)+" · días candidatos"
 
 def build(source,out):
     a=analyze(parse(source)); target=os.environ.get("TARGET_NUMBER")
