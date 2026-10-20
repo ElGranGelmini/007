@@ -1,9 +1,18 @@
 name: Actualizar informe
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/update.yml'
+      - 'server/**'
+      - 'tests/**'
+      - 'public/**'
   schedule:
-    - cron: '0 15,21 * * *'
-      timezone: Europe/Madrid
+    # Comprobación horaria de lunes a jueves. El paso "horario" adapta el
+    # intervalo real de 09:00-21:59 Madrid al cambio de hora.
+    # Minuto 17 para reducir retrasos respecto al minuto 0.
+    - cron: '17 7-20 * * 1-4'
 permissions:
   contents: read
 concurrency:
@@ -13,24 +22,47 @@ jobs:
   build:
     if: vars.SOURCE_ENABLED == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
+    outputs:
+      ready: ${{ steps.horario.outputs.run }}
     steps:
+      - name: Comprobar horario de sesión
+        id: horario
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          now = datetime.now(ZoneInfo("Europe/Madrid"))
+          scheduled = os.environ.get("GITHUB_EVENT_NAME") == "schedule"
+          allowed = not scheduled or (now.weekday() < 4 and 9 <= now.hour < 22)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"run={str(allowed).lower()}\n")
+          print(f"Consulta permitida en este horario: {allowed} (Madrid: {now:%Y-%m-%d %H:%M})")
+          PY
       - uses: actions/checkout@v4
+        if: steps.horario.outputs.run == 'true'
       - uses: actions/setup-python@v5
+        if: steps.horario.outputs.run == 'true'
         with:
           python-version: '3.12'
       - name: Comprobar motor
+        if: steps.horario.outputs.run == 'true'
         run: python -m unittest discover -s tests
       - name: Obtener y agregar
+        if: steps.horario.outputs.run == 'true'
         env:
           TARGET_NUMBER: ${{ secrets.TARGET_NUMBER }}
           PUBLISH_COARSE_FORECAST: ${{ vars.PUBLISH_COARSE_FORECAST }}
         run: python server/update.py
       - uses: actions/upload-pages-artifact@v3
+        if: steps.horario.outputs.run == 'true'
         with:
           path: public
   deploy:
     needs: build
+    if: needs.build.outputs.ready == 'true'
     permissions:
       pages: write
       id-token: write
