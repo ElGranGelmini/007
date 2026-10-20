@@ -19,7 +19,7 @@ def parse(text):
     return sorted(unique.values(),key=lambda r:datetime.strptime(r["fecha"],"%H:%M:%S %d-%m-%Y"))
 
 def analyze(rows):
-    days={}; latest=None; frontier=None; last_finished=None
+    days={}; latest=None; frontier=None; last_finished=None; last_entered=None
     for r in rows:
         dt=datetime.strptime(r["fecha"],"%H:%M:%S %d-%m-%Y"); day=dt.date().isoformat(); latest=day
         d=days.setdefault(day,{"date":day,"entries":set(),"finished":set(),"withdrawn":set(),"excluded":set(),"absent":set(),"closed":False,"started":False,"frontier":None})
@@ -29,7 +29,7 @@ def analyze(rows):
         m=re.match(r"(?:entra|termina|se retira|se nombra|el)\s+(?:(?:el|al)\s+)?n\s*[º°o.]?\s*(\d+)",s)
         if not m: continue
         n=int(m[1]); event=False
-        if s.startswith("entra"): d["entries"].add(n); event=True
+        if s.startswith("entra"): d["entries"].add(n); last_entered=n; event=True
         if s.startswith("termina"): d["finished"].add(n); last_finished=n; event=True
         if "se retira" in s: d["withdrawn"].add(n); last_finished=n; event=True
         if "excluido" in s: d["excluded"].add(n); last_finished=n; event=True
@@ -38,14 +38,27 @@ def analyze(rows):
         d["frontier"]=frontier
     result=[]; previous=None
     for d in days.values():
-        if not d["entries"]: continue
-        f=d["frontier"]; advance=None if previous is None else f-previous
+        if not any(d[k] for k in ("entries","finished","withdrawn","excluded","absent")):
+            continue
+        f=d["frontier"]
+        advance=None if previous is None else max(0,f-previous)
+        # El avance neto incluye TODOS los puestos consumidos aunque no
+        # hayan efectuado el ejercicio. Los huecos solo son una aproximación
+        # a números sin entrada observada, no ausencias definitivas.
+        entries_in_range=(len({n for n in d["entries"] if previous < n <= f})
+                          if previous is not None else None)
+        without_entry=(max(0,advance-entries_in_range)
+                       if advance is not None else None)
+        result.append({**{k:len(d[k]) for k in ("entries","finished","withdrawn","excluded","absent")},
+                       "date":d["date"],"closed":d["closed"] and d["started"],
+                       "advance":advance,"without_entry":without_entry,
+                       "entries_in_range":entries_in_range,"frontier":f})
         previous=f
-        result.append({**{k:len(d[k]) for k in ("entries","finished","withdrawn","excluded","absent")},"date":d["date"],"closed":d["closed"] and d["started"],"advance":advance,"frontier":f})
     complete=[d for d in result if d["closed"]]
     means={k:round(statistics.mean(d[k] for d in complete),2) if complete else None for k in ("entries","finished","withdrawn")}
-    advances=[d["advance"] for d in complete if d["advance"] is not None and d["advance"]>0]
-    means["advance"]=round(statistics.mean(advances),2) if advances else None
+    for key in ("advance","without_entry"):
+        valid=[d[key] for d in complete if d[key] is not None]
+        means[key]=round(statistics.mean(valid),2) if valid else None
     # Instantánea de la última jornada, incluso cuando aún no ha terminado.
     # Las medias anteriores siguen utilizando exclusivamente sesiones cerradas.
     latest_session=next((d for d in reversed(list(days.values())) if
@@ -60,8 +73,9 @@ def analyze(rows):
                 "finished":len(latest_session["finished"]),
                 "withdrawn":len(latest_session["withdrawn"]),
                 "absent":len(latest_session["absent"]),
-                "advance":advance}
-    return {"days":result,"means":means,"recent":recent,"latest":latest,"frontier":frontier,"last_finished":last_finished,"complete":len(complete),"calendar":read_calendar(rows)}
+                "advance":advance,
+                "without_entry":matching["without_entry"] if matching else (0 if result else None)}
+    return {"days":result,"means":means,"recent":recent,"latest":latest,"frontier":frontier,"last_finished":last_finished,"last_entered":last_entered,"complete":len(complete),"calendar":read_calendar(rows)}
 
 def read_calendar(rows):
     announced=set(); extra=set()
@@ -210,9 +224,10 @@ def build(source,out):
     # Ambas se generan en el servidor; nunca exponen el objetivo protegido.
     source_last_at=datetime.strptime(rows[-1]["fecha"],"%H:%M:%S %d-%m-%Y").replace(tzinfo=ZoneInfo("Europe/Madrid")).isoformat(timespec="seconds")
     checked_at=datetime.now(timezone.utc).isoformat(timespec="seconds")
-    public={"checked_at":checked_at,"source_last_at":source_last_at,"updated":a["latest"],"last":a["last_finished"],"complete":a["complete"],"means":a["means"],"recent":a["recent"],"forecast":"Reservada por privacidad", "mode":"Histórico importado","probabilities":[],"next_call":next_call(rows,a["latest"],target)}
+    public={"checked_at":checked_at,"source_last_at":source_last_at,"updated":a["latest"],"last":a["last_finished"],"last_entered":a["last_entered"],"complete":a["complete"],"means":a["means"],"recent":a["recent"],"forecast":"Reservada por privacidad", "mode":"Histórico importado","probabilities":[],"next_call":next_call(rows,a["latest"],target)}
     # A secret matching a public observation must never be emitted.
     if target and public["last"]==int(target): public["last"]=None
+    if target and public["last_entered"]==int(target): public["last_entered"]=None
     if os.environ.get("LIVE_MODE")=="1": public["mode"]="Consulta oficial verificada"
     if target:
         private=forecast(a,int(target))

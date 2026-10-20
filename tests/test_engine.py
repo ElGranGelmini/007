@@ -51,4 +51,33 @@ class Tests(unittest.TestCase):
         self.assertEqual(data["recent"]["entries"],0)
         self.assertEqual(data["recent"]["date"],"2026-09-15")
         self.assertEqual(data["complete"],1)
+    def test_unrecorded_numbers_counted_in_progress_not_as_confirmed_absences(self):
+        rows=sample()+[
+            {"fecha":"09:30:00 15-09-2026","idNotificacion":20,"idOposicion":6,"mensaje":"Comienza la sesión."},
+            {"fecha":"10:00:00 15-09-2026","idNotificacion":21,"idOposicion":6,"mensaje":"Entra n º 9"},
+            {"fecha":"10:05:00 15-09-2026","idNotificacion":22,"idOposicion":6,"mensaje":"Se retira n º 9."},
+            {"fecha":"10:30:00 15-09-2026","idNotificacion":23,"idOposicion":6,"mensaje":"Entra n º 14"},
+            {"fecha":"11:30:00 15-09-2026","idNotificacion":24,"idOposicion":6,"mensaje":"Termina n º 14"},
+            {"fecha":"18:00:00 15-09-2026","idNotificacion":25,"idOposicion":6,"mensaje":"Finaliza la sesión."}
+        ]
+        data=analyze(rows)
+        self.assertEqual(data["last_entered"],14)
+        self.assertEqual(data["last_finished"],14)
+        self.assertEqual(data["recent"]["entries"],2)
+        self.assertEqual(data["recent"]["advance"],9)
+        self.assertEqual(data["recent"]["without_entry"],7)
+        self.assertEqual(data["means"]["advance"],9)
+        self.assertEqual(data["means"]["without_entry"],7)
+    def test_explicit_absent_moves_frontier_without_exam(self):
+        rows=sample()+[
+            {"fecha":"09:30:00 15-09-2026","idNotificacion":20,"idOposicion":6,"mensaje":"Comienza la sesión."},
+            {"fecha":"10:00:00 15-09-2026","idNotificacion":21,"idOposicion":6,"mensaje":"Se nombra al n º 12 no presente."},
+            {"fecha":"11:00:00 15-09-2026","idNotificacion":22,"idOposicion":6,"mensaje":"Finaliza la sesión."}
+        ]
+        data=analyze(rows)
+        self.assertEqual(data["frontier"],12)
+        self.assertEqual(data["recent"]["entries"],0)
+        self.assertEqual(data["recent"]["absent"],1)
+        self.assertEqual(data["recent"]["advance"],7)
+        self.assertEqual(data["recent"]["without_entry"],7)
 if __name__=="__main__":unittest.main()

@@ -9,10 +9,11 @@ on:
       - 'tests/**'
       - 'public/**'
   schedule:
-    # Comprobación horaria de lunes a jueves. El paso "horario" adapta el
-    # intervalo real de 09:00-21:59 Madrid al cambio de hora.
-    # Minuto 17 para reducir retrasos respecto al minuto 0.
-    - cron: '17 7-20 * * 1-4'
+    # Github puede retrasar el inicio: la tarea no debe descartarse por el
+    # reloj real cuando por fin arranca.
+    - cron: '23 7-23 * * 1-4'
+    # Comprobación adicional de cierre en la madrugada siguiente.
+    - cron: '41 0 * * 2-5'
 permissions:
   contents: read
 concurrency:
@@ -23,46 +24,38 @@ jobs:
     if: vars.SOURCE_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 8
-    outputs:
-      ready: ${{ steps.horario.outputs.run }}
     steps:
-      - name: Comprobar horario de sesión
-        id: horario
-        shell: bash
-        run: |
-          python - <<'PY'
-          import os
-          from datetime import datetime
-          from zoneinfo import ZoneInfo
-          now = datetime.now(ZoneInfo("Europe/Madrid"))
-          scheduled = os.environ.get("GITHUB_EVENT_NAME") == "schedule"
-          allowed = not scheduled or (now.weekday() < 4 and 9 <= now.hour < 22)
-          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-              f.write(f"run={str(allowed).lower()}\n")
-          print(f"Consulta permitida en este horario: {allowed} (Madrid: {now:%Y-%m-%d %H:%M})")
-          PY
       - uses: actions/checkout@v4
-        if: steps.horario.outputs.run == 'true'
       - uses: actions/setup-python@v5
-        if: steps.horario.outputs.run == 'true'
         with:
           python-version: '3.12'
       - name: Comprobar motor
-        if: steps.horario.outputs.run == 'true'
         run: python -m unittest discover -s tests
       - name: Obtener y agregar
-        if: steps.horario.outputs.run == 'true'
         env:
           TARGET_NUMBER: ${{ secrets.TARGET_NUMBER }}
           PUBLISH_COARSE_FORECAST: ${{ vars.PUBLISH_COARSE_FORECAST }}
         run: python server/update.py
+      - name: Verificar que el nuevo informe fue generado
+        run: |
+          python - <<'PY'
+          import json, re
+          from pathlib import Path
+          from datetime import datetime, timezone
+          s = Path("public/data.js").read_text(encoding="utf-8").strip()
+          assert s.startswith("window.SHURMAN=")
+          data = json.loads(re.sub(r";$", "", s.removeprefix("window.SHURMAN=")))
+          checked = datetime.fromisoformat(data["checked_at"])
+          assert abs((datetime.now(timezone.utc) - checked).total_seconds()) < 600
+          assert data["source_last_at"]
+          assert data.get("recent") is not None
+          print("Informe generado con fuente oficial:", data["source_last_at"])
+          PY
       - uses: actions/upload-pages-artifact@v3
-        if: steps.horario.outputs.run == 'true'
         with:
           path: public
   deploy:
     needs: build
-    if: needs.build.outputs.ready == 'true'
     permissions:
       pages: write
       id-token: write

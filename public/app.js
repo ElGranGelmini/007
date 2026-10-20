@@ -40,7 +40,7 @@ function describeStatus(data) {
 }
 function render(data) {
   const recent = data.recent;
-  const keys = ["entries", "finished", "withdrawn", "advance"];
+  const keys = ["entries", "finished", "withdrawn", "advance", "without_entry"];
   for (const key of keys) {
     const number = recent?.[key];
     put(key, typeof number === "number" ? number.toLocaleString("es-ES") : "—");
@@ -62,8 +62,10 @@ function render(data) {
   put("historical-means", "Entradas: " + average("entries") +
     " · Terminados: " + average("finished") +
     " · Retiradas: " + average("withdrawn") +
-    " · Avance: " + average("advance") + " números/jornada");
+    " · Avance total: " + average("advance") +
+    " · Sin entrada registrada*: " + average("without_entry") + " números/jornada");
   put("last", data.last ?? "Dato reservado");
+  put("last-entered", data.last_entered ?? "Dato reservado");
   put("forecast", data.forecast || "Sin estimación publicada");
   put("status", describeStatus(data));
 

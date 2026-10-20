@@ -16,6 +16,10 @@ if __name__=="__main__":
         query=urllib.parse.urlencode({"draw":1,"start":0,"length":2000,"columns[0][data]":"fecha","columns[1][data]":"mensaje","order[0][column]":0,"order[0][dir]":"desc"})
         source=get(endpoint+"&"+query)
         os.environ["LIVE_MODE"]="1"
-        build(source,"public")
+        report=build(source,"public")
+        print("Parte oficial:", report["latest"],
+              "última entrada:",report["last_entered"],
+              "último desenlace:",report["last_finished"],
+              "avance:",report["recent"]["advance"] if report["recent"] else None)
     except Exception:
         raise SystemExit("Actualización detenida; se conserva la publicación anterior. Revisar fuente y cobertura. Sin reintentos automáticos.")
