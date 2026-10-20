@@ -1,7 +1,8 @@
 import json, re, html, os, statistics, math, random
 from collections import Counter
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 def parse(text):
     text=text.strip()
@@ -190,7 +191,11 @@ def next_call(rows,after,target=None):
 
 def build(source,out):
     rows=parse(source); a=analyze(rows); target=os.environ.get("TARGET_NUMBER")
-    public={"updated":a["latest"],"last":a["last_finished"],"complete":a["complete"],"means":a["means"],"forecast":"Reservada por privacidad", "mode":"Histórico importado","probabilities":[],"next_call":next_call(rows,a["latest"],target)}
+    # La fecha del último parte es distinta de la última consulta realizada.
+    # Ambas se generan en el servidor; nunca exponen el objetivo protegido.
+    source_last_at=datetime.strptime(rows[-1]["fecha"],"%H:%M:%S %d-%m-%Y").replace(tzinfo=ZoneInfo("Europe/Madrid")).isoformat(timespec="seconds")
+    checked_at=datetime.now(timezone.utc).isoformat(timespec="seconds")
+    public={"checked_at":checked_at,"source_last_at":source_last_at,"updated":a["latest"],"last":a["last_finished"],"complete":a["complete"],"means":a["means"],"forecast":"Reservada por privacidad", "mode":"Histórico importado","probabilities":[],"next_call":next_call(rows,a["latest"],target)}
     # A secret matching a public observation must never be emitted.
     if target and public["last"]==int(target): public["last"]=None
     if os.environ.get("LIVE_MODE")=="1": public["mode"]="Consulta oficial verificada"
