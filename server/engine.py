@@ -46,7 +46,22 @@ def analyze(rows):
     means={k:round(statistics.mean(d[k] for d in complete),2) if complete else None for k in ("entries","finished","withdrawn")}
     advances=[d["advance"] for d in complete if d["advance"] is not None and d["advance"]>0]
     means["advance"]=round(statistics.mean(advances),2) if advances else None
-    return {"days":result,"means":means,"latest":latest,"frontier":frontier,"last_finished":last_finished,"complete":len(complete),"calendar":read_calendar(rows)}
+    # Instantánea de la última jornada, incluso cuando aún no ha terminado.
+    # Las medias anteriores siguen utilizando exclusivamente sesiones cerradas.
+    latest_session=next((d for d in reversed(list(days.values())) if
+                         d["started"] or d["entries"] or d["finished"] or d["withdrawn"]),None)
+    recent=None
+    if latest_session is not None:
+        matching=next((d for d in reversed(result) if d["date"]==latest_session["date"]),None)
+        advance=matching["advance"] if matching else (0 if result else None)
+        recent={"date":latest_session["date"],
+                "closed":bool(latest_session["closed"] and latest_session["started"]),
+                "entries":len(latest_session["entries"]),
+                "finished":len(latest_session["finished"]),
+                "withdrawn":len(latest_session["withdrawn"]),
+                "absent":len(latest_session["absent"]),
+                "advance":advance}
+    return {"days":result,"means":means,"recent":recent,"latest":latest,"frontier":frontier,"last_finished":last_finished,"complete":len(complete),"calendar":read_calendar(rows)}
 
 def read_calendar(rows):
     announced=set(); extra=set()
@@ -195,7 +210,7 @@ def build(source,out):
     # Ambas se generan en el servidor; nunca exponen el objetivo protegido.
     source_last_at=datetime.strptime(rows[-1]["fecha"],"%H:%M:%S %d-%m-%Y").replace(tzinfo=ZoneInfo("Europe/Madrid")).isoformat(timespec="seconds")
     checked_at=datetime.now(timezone.utc).isoformat(timespec="seconds")
-    public={"checked_at":checked_at,"source_last_at":source_last_at,"updated":a["latest"],"last":a["last_finished"],"complete":a["complete"],"means":a["means"],"forecast":"Reservada por privacidad", "mode":"Histórico importado","probabilities":[],"next_call":next_call(rows,a["latest"],target)}
+    public={"checked_at":checked_at,"source_last_at":source_last_at,"updated":a["latest"],"last":a["last_finished"],"complete":a["complete"],"means":a["means"],"recent":a["recent"],"forecast":"Reservada por privacidad", "mode":"Histórico importado","probabilities":[],"next_call":next_call(rows,a["latest"],target)}
     # A secret matching a public observation must never be emitted.
     if target and public["last"]==int(target): public["last"]=None
     if os.environ.get("LIVE_MODE")=="1": public["mode"]="Consulta oficial verificada"

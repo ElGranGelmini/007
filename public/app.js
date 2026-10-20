@@ -39,13 +39,32 @@ function describeStatus(data) {
     " · Verificado: " + lastCheck + " · " + (data.mode || "Seguimiento");
 }
 function render(data) {
-  for (const key of ["entries", "finished", "withdrawn", "advance"]) {
-    put(key, data.means?.[key]?.toLocaleString("es-ES") ?? "—");
+  const recent = data.recent;
+  const keys = ["entries", "finished", "withdrawn", "advance"];
+  for (const key of keys) {
+    const number = recent?.[key];
+    put(key, typeof number === "number" ? number.toLocaleString("es-ES") : "—");
   }
+  const nowInMadrid = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit"
+  }).format(new Date());
+  const ongoing = recent && !recent.closed && recent.date === nowInMadrid;
+  put("recent-title", ongoing ? "JORNADA EN CURSO · DATOS PROVISIONALES" : "ÚLTIMA JORNADA REGISTRADA");
+  put("recent-date", recent?.date ? formatDay(recent.date) : "Sin jornada identificada");
+  put("recent-detail", recent
+    ? "Incomparecencias expresamente anunciadas: " + recent.absent +
+      " · Los saltos de numeración no se cuentan automáticamente como ausencias."
+    : "Aún no hay datos de la jornada.");
+  const average = (key) => {
+    const value = data.means?.[key];
+    return typeof value === "number" ? value.toLocaleString("es-ES", { maximumFractionDigits: 2 }) : "—";
+  };
+  put("historical-means", "Entradas: " + average("entries") +
+    " · Terminados: " + average("finished") +
+    " · Retiradas: " + average("withdrawn") +
+    " · Avance: " + average("advance") + " números/jornada");
   put("last", data.last ?? "Dato reservado");
   put("forecast", data.forecast || "Sin estimación publicada");
-  put("coverage", "Medias sobre " + (data.complete ?? 0) +
-    " jornadas completas. La jornada abierta no entra en la media.");
   put("status", describeStatus(data));
 
   const container = document.getElementById("probabilities");

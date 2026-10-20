@@ -18,4 +18,37 @@ class Tests(unittest.TestCase):
     def test_future_notice(self):
         rows=sample()+[{"fecha":"11:00:00 14-09-2026","idNotificacion":8,"idOposicion":6,"mensaje":"Cuando finalice su ejercicio nº 50 se suspenderá la sesión"}]
         self.assertEqual(analyze(rows)["days"][0]["finished"],1)
+    def test_recent_session_excludes_incomplete_day_from_historical_means(self):
+        rows=sample()+[
+            {"fecha":"09:30:00 15-09-2026","idNotificacion":20,"idOposicion":6,"mensaje":"Comienza la sesión."},
+            {"fecha":"10:00:00 15-09-2026","idNotificacion":21,"idOposicion":6,"mensaje":"Entra n º 9"},
+            {"fecha":"10:10:00 15-09-2026","idNotificacion":22,"idOposicion":6,"mensaje":"Se retira n º 9."}
+        ]
+        data=analyze(rows)
+        self.assertEqual(data["complete"],1)
+        self.assertEqual(data["recent"]["date"],"2026-09-15")
+        self.assertFalse(data["recent"]["closed"])
+        self.assertEqual(data["recent"]["entries"],1)
+        self.assertEqual(data["recent"]["withdrawn"],1)
+        self.assertEqual(data["recent"]["advance"],4)
+        self.assertEqual(data["means"]["entries"],1.0)
+    def test_recent_session_closed(self):
+        rows=sample()+[
+            {"fecha":"09:30:00 15-09-2026","idNotificacion":20,"idOposicion":6,"mensaje":"Comienza la sesión."},
+            {"fecha":"10:00:00 15-09-2026","idNotificacion":21,"idOposicion":6,"mensaje":"Entra n º 9"},
+            {"fecha":"10:10:00 15-09-2026","idNotificacion":22,"idOposicion":6,"mensaje":"Se retira n º 9."},
+            {"fecha":"17:00:00 15-09-2026","idNotificacion":23,"idOposicion":6,"mensaje":"Finaliza la sesión."}
+        ]
+        data=analyze(rows)
+        self.assertEqual(data["complete"],2)
+        self.assertTrue(data["recent"]["closed"])
+        self.assertEqual(data["recent"]["withdrawn"],1)
+    def test_open_session_before_first_entry(self):
+        rows=sample()+[
+            {"fecha":"09:30:00 15-09-2026","idNotificacion":20,"idOposicion":6,"mensaje":"Comienza la sesión."}
+        ]
+        data=analyze(rows)
+        self.assertEqual(data["recent"]["entries"],0)
+        self.assertEqual(data["recent"]["date"],"2026-09-15")
+        self.assertEqual(data["complete"],1)
 if __name__=="__main__":unittest.main()
