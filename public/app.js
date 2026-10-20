@@ -43,7 +43,8 @@ function render(data) {
   const keys = ["entries", "finished", "withdrawn", "advance", "without_entry"];
   for (const key of keys) {
     const number = recent?.[key];
-    put(key, typeof number === "number" ? number.toLocaleString("es-ES") : "—");
+    const elementId = key === "without_entry" ? "without-entry" : key;
+    put(elementId, typeof number === "number" ? number.toLocaleString("es-ES") : "—");
   }
   const nowInMadrid = new Intl.DateTimeFormat("sv-SE", {
     timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit"

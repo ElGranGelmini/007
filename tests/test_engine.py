@@ -80,4 +80,11 @@ class Tests(unittest.TestCase):
         self.assertEqual(data["recent"]["absent"],1)
         self.assertEqual(data["recent"]["advance"],7)
         self.assertEqual(data["recent"]["without_entry"],7)
+    def test_metric_ids_match_client_rendering(self):
+        root=Path(__file__).resolve().parents[1]
+        webpage=(root/"public"/"index.html").read_text()
+        client=(root/"public"/"app.js").read_text()
+        self.assertIn('id="without-entry"',webpage)
+        self.assertIn('key === "without_entry" ? "without-entry" : key',client)
+        self.assertIn('put(elementId, typeof number === "number"',client)
 if __name__=="__main__":unittest.main()
