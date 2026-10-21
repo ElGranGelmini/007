@@ -106,4 +106,15 @@ class Tests(unittest.TestCase):
         call=announced_calls(rows,"2026-10-21",target="607")[0]
         self.assertIsNone(call["from"])
         self.assertIsNone(call["to"])
+    def test_completed_current_day_call_not_marked_next(self):
+        from engine import announced_calls
+        rows=sample()+[
+            {"fecha":"11:00:00 21-10-2026","idNotificacion":222,"idOposicion":6,
+             "mensaje":"Convocatoria miércoles 21/10/2026 a las 09:30 horas del n º 385 al n º 411."},
+            {"fecha":"12:00:00 21-10-2026","idNotificacion":223,"idOposicion":6,
+             "mensaje":"Convocatoria lunes 26/10/2026 a las 10:00 horas del n º 412 al n º 450."}
+        ]
+        calls=announced_calls(rows,"2026-10-21",frontier=411)
+        self.assertEqual([c["date"] for c in calls],["2026-10-26"])
+        self.assertEqual(calls[0]["to"],450)
 if __name__=="__main__":unittest.main()

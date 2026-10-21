@@ -194,7 +194,7 @@ def probability_cards(result):
     cards.append({"date":None,"percent":units[-1]/10})
     return cards
 
-def announced_calls(rows, after, target=None):
+def announced_calls(rows, after, target=None, frontier=None):
     """Extrae únicamente fechas, franjas y rangos de llamamientos, no nombres.
 
     Admite varias fechas en un mensaje y varios anuncios posteriores.
@@ -230,6 +230,10 @@ def announced_calls(rows, after, target=None):
             low,high=map(int,bound.groups())
             if low>high or high>10000:
                 continue
+            # Si ya se ha alcanzado el último número de la convocatoria
+            # del día, no debe presentarse como próximo llamamiento.
+            if frontier is not None and day==after and high<=frontier:
+                continue
             hour=hour_pattern.search(segment)
             time_text=f"{int(hour[1]):02d}:{hour[2]}" if hour and int(hour[1])<24 and int(hour[2])<60 else None
             calls[day]={"date":day,"from":low,"to":high,"time":time_text}
@@ -241,8 +245,8 @@ def announced_calls(rows, after, target=None):
                 call["to"]=None
     return result[:21]
 
-def next_call(rows,after,target=None):
-    schedule=announced_calls(rows,after,target)
+def next_call(rows,after,target=None,frontier=None):
+    schedule=announced_calls(rows,after,target,frontier)
     return schedule[0] if schedule else None
 
 def build(source,out):
@@ -251,7 +255,7 @@ def build(source,out):
     # Ambas se generan en el servidor; nunca exponen el objetivo protegido.
     source_last_at=datetime.strptime(rows[-1]["fecha"],"%H:%M:%S %d-%m-%Y").replace(tzinfo=ZoneInfo("Europe/Madrid")).isoformat(timespec="seconds")
     checked_at=datetime.now(timezone.utc).isoformat(timespec="seconds")
-    public={"checked_at":checked_at,"source_last_at":source_last_at,"updated":a["latest"],"last":a["last_finished"],"last_entered":a["last_entered"],"complete":a["complete"],"means":a["means"],"recent":a["recent"],"forecast":"Reservada por privacidad", "mode":"Histórico importado","probabilities":[],"next_call":next_call(rows,a["latest"],target),"call_schedule":announced_calls(rows,a["latest"],target)}
+    public={"checked_at":checked_at,"source_last_at":source_last_at,"updated":a["latest"],"last":a["last_finished"],"last_entered":a["last_entered"],"complete":a["complete"],"means":a["means"],"recent":a["recent"],"forecast":"Reservada por privacidad", "mode":"Histórico importado","probabilities":[],"next_call":next_call(rows,a["latest"],target,a["frontier"]),"call_schedule":announced_calls(rows,a["latest"],target,a["frontier"])}
     # A secret matching a public observation must never be emitted.
     if target and public["last"]==int(target): public["last"]=None
     if target and public["last_entered"]==int(target): public["last_entered"]=None

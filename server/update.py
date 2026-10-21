@@ -21,7 +21,7 @@ if __name__=="__main__":
         from engine import parse, announced_calls
         original=parse(source)
         notices=sum(bool(re.search(r"convocatori|convocad|llamamiento",r["mensaje"],re.I)) for r in original)
-        scheduled=announced_calls(original,report["latest"],os.environ.get("TARGET_NUMBER"))
+        scheduled=announced_calls(original,report["latest"],os.environ.get("TARGET_NUMBER"),report["frontier"])
         print("Mensajes con anuncio de convocatoria:",notices)
         print("Próximas convocatorias estructuradas:",[(c["date"],c["from"],c["to"],c["time"]) for c in scheduled])
         print("Parte oficial:", report["latest"],
