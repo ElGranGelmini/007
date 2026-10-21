@@ -87,4 +87,23 @@ class Tests(unittest.TestCase):
         self.assertIn('id="without-entry"',webpage)
         self.assertIn('key === "without_entry" ? "without-entry" : key',client)
         self.assertIn('put(elementId, typeof number === "number"',client)
+    def test_multiday_next_week_calls(self):
+        from engine import announced_calls
+        rows=sample()+[
+            {"fecha":"12:00:00 21-10-2026","idNotificacion":100,"idOposicion":6,
+             "mensaje":"Convocatoria lunes 26/10/2026 a las 09:30 horas del n º 412 al n º 437. Martes 27/10/2026 a las 10:00 horas del n º 438 al n º 465."},
+            {"fecha":"12:30:00 21-10-2026","idNotificacion":101,"idOposicion":6,
+             "mensaje":"Convocatoria miércoles 28/10/2026 a las 09:30 horas del n º 466 al n º 490."}
+        ]
+        calls=announced_calls(rows,"2026-10-21")
+        self.assertEqual([c["date"] for c in calls],["2026-10-26","2026-10-27","2026-10-28"])
+        self.assertEqual((calls[0]["from"],calls[0]["to"],calls[0]["time"]),(412,437,"09:30"))
+        self.assertEqual((calls[2]["from"],calls[2]["to"]),(466,490))
+    def test_target_range_is_redacted(self):
+        from engine import announced_calls
+        rows=sample()+[{"fecha":"12:00:00 21-10-2026","idNotificacion":200,
+                        "idOposicion":6,"mensaje":"Convocatoria lunes 26/10/2026 a las 9:30 horas del n º 600 al n º 620."}]
+        call=announced_calls(rows,"2026-10-21",target="607")[0]
+        self.assertIsNone(call["from"])
+        self.assertIsNone(call["to"])
 if __name__=="__main__":unittest.main()

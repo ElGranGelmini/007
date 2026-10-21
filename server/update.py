@@ -17,6 +17,13 @@ if __name__=="__main__":
         source=get(endpoint+"&"+query)
         os.environ["LIVE_MODE"]="1"
         report=build(source,"public")
+        # Solo fechas y rangos; no publicar el contenido íntegro de las comunicaciones.
+        from engine import parse, announced_calls
+        original=parse(source)
+        notices=sum(bool(re.search(r"convocatori|convocad|llamamiento",r["mensaje"],re.I)) for r in original)
+        scheduled=announced_calls(original,report["latest"],os.environ.get("TARGET_NUMBER"))
+        print("Mensajes con anuncio de convocatoria:",notices)
+        print("Próximas convocatorias estructuradas:",[(c["date"],c["from"],c["to"],c["time"]) for c in scheduled])
         print("Parte oficial:", report["latest"],
               "última entrada:",report["last_entered"],
               "último desenlace:",report["last_finished"],

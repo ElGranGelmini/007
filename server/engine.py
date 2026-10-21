@@ -194,29 +194,56 @@ def probability_cards(result):
     cards.append({"date":None,"percent":units[-1]/10})
     return cards
 
-def next_call(rows,after,target=None):
+def announced_calls(rows, after, target=None):
+    """Extrae únicamente fechas, franjas y rangos de llamamientos, no nombres.
+
+    Admite varias fechas en un mensaje y varios anuncios posteriores.
+    No infiere rangos que no estén explícitos en la comunicación.
+    """
     calls={}
+    date_pattern=re.compile(r"(?<!\d)(\d{1,2})\s*[/.-]\s*(\d{1,2})\s*[/.-]\s*(20\d{2})(?!\d)")
+    number_pattern=re.compile(
+        r"(?:del|desde el)\s+(?:n\s*[º°o.]?\s*|número(?:s)?\s*)?"
+        r"(\d{1,4})\s*(?:al|a|hasta el|[-–])\s*"
+        r"(?:n\s*[º°o.]?\s*|número(?:s)?\s*)?(\d{1,4})",
+        re.IGNORECASE
+    )
+    hour_pattern=re.compile(r"(?<!\d)(\d{1,2})[:.](\d{2})\s*(?:h(?:oras)?\.?)?",re.IGNORECASE)
     for r in rows:
-        text=html.unescape(re.sub("<[^>]+>"," ",r["mensaje"])).lower()
-        if "convocatoria" not in text: continue
-        matches=list(re.finditer(r"(\d{1,2})\s*/\s*(\d{1,2})\s*/\s*(\d{4})",text))
-        for i,m in enumerate(matches):
-            try: day=datetime(int(m[3]),int(m[2]),int(m[1])).date().isoformat()
-            except ValueError: continue
-            segment=text[m.end():matches[i+1].start() if i+1<len(matches) else len(text)]
-            bounds=re.search(r"del\s+n\s*[º°o.]?\s*(\d+)\s+al\s+n\s*[º°o.]?\s*(\d+)",segment)
-            if not bounds: continue
-            low,high=map(int,bounds.groups())
-            if low>high: continue
-            hour=re.search(r"(?:a las\s+)?(\d{1,2})[:.](\d{2})\s*(?:h|horas)",segment)
-            calls[day]={"date":day,"from":low,"to":high,"time":f"{int(hour[1]):02d}:{hour[2]}" if hour else None}
-    future=[day for day in calls if day>after]
-    if not future: return None
-    call=calls[min(future)]
-    # Do not disclose a literal secret even if it coincides with a range endpoint.
-    if target and int(target) in (call["from"],call["to"]):
-        call["from"]=None;call["to"]=None
-    return call
+        raw=html.unescape(re.sub(r"<br\s*/?>"," ",r["mensaje"],flags=re.IGNORECASE))
+        msg=" ".join(re.sub(r"<[^>]+>"," ",raw).split())
+        if not re.search(r"convocatori|convocad|llamamiento",msg,re.IGNORECASE):
+            continue
+        dates=list(date_pattern.finditer(msg))
+        for i,m in enumerate(dates):
+            try:
+                day=datetime(int(m[3]),int(m[2]),int(m[1])).date().isoformat()
+            except ValueError:
+                continue
+            if day<after:
+                continue
+            # Fecha y su tramo, hasta la siguiente fecha del mismo mensaje.
+            segment=msg[m.end():dates[i+1].start() if i+1<len(dates) else len(msg)]
+            bound=number_pattern.search(segment)
+            if not bound:
+                continue
+            low,high=map(int,bound.groups())
+            if low>high or high>10000:
+                continue
+            hour=hour_pattern.search(segment)
+            time_text=f"{int(hour[1]):02d}:{hour[2]}" if hour and int(hour[1])<24 and int(hour[2])<60 else None
+            calls[day]={"date":day,"from":low,"to":high,"time":time_text}
+    result=[calls[d] for d in sorted(calls)]
+    if target:
+        for call in result:
+            if call["from"]<=int(target)<=call["to"]:
+                call["from"]=None
+                call["to"]=None
+    return result[:21]
+
+def next_call(rows,after,target=None):
+    schedule=announced_calls(rows,after,target)
+    return schedule[0] if schedule else None
 
 def build(source,out):
     rows=parse(source); a=analyze(rows); target=os.environ.get("TARGET_NUMBER")
@@ -224,7 +251,7 @@ def build(source,out):
     # Ambas se generan en el servidor; nunca exponen el objetivo protegido.
     source_last_at=datetime.strptime(rows[-1]["fecha"],"%H:%M:%S %d-%m-%Y").replace(tzinfo=ZoneInfo("Europe/Madrid")).isoformat(timespec="seconds")
     checked_at=datetime.now(timezone.utc).isoformat(timespec="seconds")
-    public={"checked_at":checked_at,"source_last_at":source_last_at,"updated":a["latest"],"last":a["last_finished"],"last_entered":a["last_entered"],"complete":a["complete"],"means":a["means"],"recent":a["recent"],"forecast":"Reservada por privacidad", "mode":"Histórico importado","probabilities":[],"next_call":next_call(rows,a["latest"],target)}
+    public={"checked_at":checked_at,"source_last_at":source_last_at,"updated":a["latest"],"last":a["last_finished"],"last_entered":a["last_entered"],"complete":a["complete"],"means":a["means"],"recent":a["recent"],"forecast":"Reservada por privacidad", "mode":"Histórico importado","probabilities":[],"next_call":next_call(rows,a["latest"],target),"call_schedule":announced_calls(rows,a["latest"],target)}
     # A secret matching a public observation must never be emitted.
     if target and public["last"]==int(target): public["last"]=None
     if target and public["last_entered"]==int(target): public["last_entered"]=None

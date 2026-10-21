@@ -108,6 +108,28 @@ function render(data) {
     put("call-range", "Sin convocatoria futura identificada");
     put("call-date", "Consulta el parte oficial para confirmar el llamamiento.");
   }
+  const list = document.getElementById("call-list");
+  if (list) {
+    list.replaceChildren();
+    const schedule = Array.isArray(data.call_schedule) ? data.call_schedule : [];
+    if (!schedule.length) {
+      const note = document.createElement("p");
+      note.className = "call-list-empty";
+      note.textContent = "Aún no hay más convocatorias futuras identificadas en el seguimiento.";
+      list.append(note);
+    } else {
+      for (const item of schedule) {
+        const entry = document.createElement("div");
+        entry.className = "call-list-card";
+        const date = document.createElement("strong");
+        date.textContent = formatDay(item.date) + (item.time ? " · " + item.time + " h" : "");
+        const range = document.createElement("span");
+        range.textContent = item.from == null ? "Consultar rango oficial" : "N.º " + item.from + "–" + item.to;
+        entry.append(date, range);
+        list.append(entry);
+      }
+    }
+  }
 }
 async function refresh() {
   if (isLoading) return;
