@@ -260,7 +260,10 @@ def build(source,out):
     # Ambas se generan en el servidor; nunca exponen el objetivo protegido.
     source_last_at=datetime.strptime(rows[-1]["fecha"],"%H:%M:%S %d-%m-%Y").replace(tzinfo=ZoneInfo("Europe/Madrid")).isoformat(timespec="seconds")
     checked_at=datetime.now(timezone.utc).isoformat(timespec="seconds")
-    public={"phase":phase,"checked_at":checked_at,"source_last_at":source_last_at,"updated":a["latest"],"last":a["last_finished"],"last_entered":a["last_entered"],"complete":a["complete"],"means":a["means"],"recent":a["recent"],"forecast":"Reservada por privacidad", "mode":"Histórico importado","probabilities":[],"next_call":next_call(rows,a["latest"],target,a["frontier"]),"call_schedule":announced_calls(rows,a["latest"],target,a["frontier"])}
+    # Las convocatorias vencidas no deben mostrarse como próximas si el
+    # último parte publicado es anterior a la fecha actual.
+    call_after=max(a["latest"],datetime.now(ZoneInfo("Europe/Madrid")).date().isoformat())
+    public={"phase":phase,"checked_at":checked_at,"source_last_at":source_last_at,"updated":a["latest"],"last":a["last_finished"],"last_entered":a["last_entered"],"complete":a["complete"],"means":a["means"],"recent":a["recent"],"forecast":"Reservada por privacidad", "mode":"Histórico importado","probabilities":[],"next_call":next_call(rows,call_after,target,a["frontier"]),"call_schedule":announced_calls(rows,call_after,target,a["frontier"])}
     # A secret matching a public observation must never be emitted.
     if target and public["last"]==int(target): public["last"]=None
     if target and public["last_entered"]==int(target): public["last_entered"]=None
