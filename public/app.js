@@ -68,6 +68,11 @@ function render(data) {
   put("last", data.last ?? "Dato reservado");
   put("last-entered", data.last_entered ?? "Dato reservado");
   put("forecast", data.forecast || "Sin estimación publicada");
+  const second = data.phase === "second";
+  put("prob-title", second ? "¿QUÉ SEMANAS TIENEN MÁS PAPELETAS?" : "¿QUÉ DÍAS TIENEN MÁS PAPELETAS?");
+  put("prob-explain", second ? "Simulaciones por semanas de la segunda vuelta, combinando el ritmo histórico con los datos recientes. No son probabilidades calibradas." : "Estimación del modelo: porcentaje de simulaciones en las que el turno cae ese día. No es una probabilidad comprobada.");
+  put("prob-footnote", second ? "Distribución por semana de comienzo (lunes), más el resto. El pronóstico se ajustará con nuevas jornadas y convocatorias." : "Las cinco fechas con más peso y el resto, hasta sumar el 100 %. «Otras fechas» también incluye simulaciones fuera del calendario previsto.");
+  put("forecast-description", second ? "Segunda vuelta · horizonte orientativo. La convocatoria oficial prevalece sobre cualquier estimación." : "Calculadora con ilusión: puede afinar las cuentas, pero todavía no adivina el futuro.");
   put("status", describeStatus(data));
 
   const container = document.getElementById("probabilities");
@@ -78,7 +83,7 @@ function render(data) {
         const card = document.createElement("article");
         card.className = "prob-card";
         const title = document.createElement("h3");
-        title.textContent = item.date ? formatDay(item.date) : "Otras fechas";
+        title.textContent = item.date ? (data.phase === "second" ? "Semana del " + formatDay(item.date) : formatDay(item.date)) : "Otras fechas";
         const value = document.createElement("strong");
         value.textContent = Number(item.percent).toLocaleString("es-ES", {
           minimumFractionDigits: 1, maximumFractionDigits: 1

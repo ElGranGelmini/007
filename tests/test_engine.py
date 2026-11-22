@@ -117,4 +117,44 @@ class Tests(unittest.TestCase):
         calls=announced_calls(rows,"2026-10-21",frontier=411)
         self.assertEqual([c["date"] for c in calls],["2026-10-26"])
         self.assertEqual(calls[0]["to"],450)
+    def test_second_round_restart_and_phase_boundary(self):
+        from second_round import second_round_data
+        def row(i, when, msg):
+            return {"fecha":when,"idNotificacion":i,"idOposicion":6,"mensaje":msg}
+        records=[
+            row(1,"10:00:00 17-11-2026","Entra n º 661"),
+            row(2,"14:18:48 18-11-2026","Finaliza el primer llamamiento del primer ejercicio."),
+            row(3,"15:34:52 18-11-2026","Comienza el segundo llamamiento del primer ejercicio."),
+            row(4,"16:00:00 18-11-2026","Entra n º 7"),
+            row(5,"16:20:00 18-11-2026","Se retira n º 7"),
+            row(6,"21:22:50 18-11-2026","Finaliza la sesión."),
+            row(7,"09:21:48 19-11-2026","Buenos días, comienza la sesión."),
+            row(8,"09:22:59 19-11-2026","Entra n º 36 y se retira."),
+            row(9,"11:55:25 19-11-2026","Entra n º 43 y se retira."),
+            row(10,"12:28:29 19-11-2026","Finaliza la sesión.")
+        ]
+        second=second_round_data(records)
+        self.assertEqual(second["frontier"],43)
+        self.assertEqual([day["advance"] for day in second["days"]],[7,36])
+        self.assertEqual(second["complete"],2)
+        self.assertEqual(second["last_finished"],43)
+    def test_second_round_simulation_respects_official_caps(self):
+        from second_round import simulate, second_round_data, HISTORICAL_ADVANCES
+        self.assertEqual(sum(HISTORICAL_ADVANCES),621)
+        rows=[
+            {"fecha":"15:34:52 18-11-2026","idNotificacion":1,"idOposicion":6,"mensaje":"Comienza el segundo llamamiento del primer ejercicio."},
+            {"fecha":"18:00:00 18-11-2026","idNotificacion":2,"idOposicion":6,"mensaje":"Entra n º 27 y se retira."},
+            {"fecha":"21:00:00 18-11-2026","idNotificacion":3,"idOposicion":6,"mensaje":"Finaliza la sesión."},
+            {"fecha":"09:30:00 19-11-2026","idNotificacion":4,"idOposicion":6,"mensaje":"Buenos días, comienza la sesión."},
+            {"fecha":"12:00:00 19-11-2026","idNotificacion":5,"idOposicion":6,"mensaje":"Entra n º 43 y se retira."},
+            {"fecha":"12:20:00 19-11-2026","idNotificacion":6,"idOposicion":6,"mensaje":"Finaliza la sesión."}
+        ]
+        current=second_round_data(rows)
+        simulated=simulate(current,600,announced=[{"date":"2026-11-23","to":96},
+                                                    {"date":"2026-11-24","to":146},
+                                                    {"date":"2026-11-25","to":207},
+                                                    {"date":"2026-11-26","to":229}],simulations=800)
+        self.assertTrue(simulated["central"])
+        self.assertGreaterEqual(simulated["central"],"2026-11-27")
+        self.assertGreaterEqual(simulated["coverage"],0.95)
 if __name__=="__main__":unittest.main()

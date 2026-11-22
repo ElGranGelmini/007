@@ -251,21 +251,48 @@ def next_call(rows,after,target=None,frontier=None):
 
 def build(source,out):
     rows=parse(source); a=analyze(rows); target=os.environ.get("TARGET_NUMBER")
+    from second_round import second_round_data, simulate, summarize
+    second=second_round_data(rows)
+    if second:
+        a.update({key:second[key] for key in ("latest","frontier","last_finished","last_entered","recent","means","complete")})
+    phase="second" if second else "first"
     # La fecha del último parte es distinta de la última consulta realizada.
     # Ambas se generan en el servidor; nunca exponen el objetivo protegido.
     source_last_at=datetime.strptime(rows[-1]["fecha"],"%H:%M:%S %d-%m-%Y").replace(tzinfo=ZoneInfo("Europe/Madrid")).isoformat(timespec="seconds")
     checked_at=datetime.now(timezone.utc).isoformat(timespec="seconds")
-    public={"checked_at":checked_at,"source_last_at":source_last_at,"updated":a["latest"],"last":a["last_finished"],"last_entered":a["last_entered"],"complete":a["complete"],"means":a["means"],"recent":a["recent"],"forecast":"Reservada por privacidad", "mode":"Histórico importado","probabilities":[],"next_call":next_call(rows,a["latest"],target,a["frontier"]),"call_schedule":announced_calls(rows,a["latest"],target,a["frontier"])}
+    public={"phase":phase,"checked_at":checked_at,"source_last_at":source_last_at,"updated":a["latest"],"last":a["last_finished"],"last_entered":a["last_entered"],"complete":a["complete"],"means":a["means"],"recent":a["recent"],"forecast":"Reservada por privacidad", "mode":"Histórico importado","probabilities":[],"next_call":next_call(rows,a["latest"],target,a["frontier"]),"call_schedule":announced_calls(rows,a["latest"],target,a["frontier"])}
     # A secret matching a public observation must never be emitted.
     if target and public["last"]==int(target): public["last"]=None
     if target and public["last_entered"]==int(target): public["last_entered"]=None
     if os.environ.get("LIVE_MODE")=="1": public["mode"]="Consulta oficial verificada"
     if target:
-        private=forecast(a,int(target))
-        if os.environ.get("PRIVATE_REPORT"): Path(os.environ["PRIVATE_REPORT"]).write_text(private)
-        if os.environ.get("PUBLISH_COARSE_FORECAST")=="true":
-            public["forecast"]=private
-            public["probabilities"]=probability_cards(forecast_details(a,int(target)))
+        if second:
+            simulation=simulate(second,int(target),announced_calls(rows,a["latest"],None,a["frontier"]))
+            private=summarize(simulation)
+            if os.environ.get("PRIVATE_REPORT"):
+                Path(os.environ["PRIVATE_REPORT"]).write_text(private)
+            if os.environ.get("PUBLISH_COARSE_FORECAST")=="true":
+                if simulation and simulation["central"]:
+                    # Publicamos solo semanas, nunca fechas individuales ni el
+                    # identificador secreto del opositor.
+                    from datetime import date
+                    def week_start(day):
+                        d=date.fromisoformat(day)
+                        return (d-timedelta(days=d.weekday())).isoformat()
+                    week=week_start(simulation["central"])
+                    public["forecast"]="Semana del "+datetime.fromisoformat(week).strftime("%d/%m/%Y")+" · estimación orientativa"
+                    weekly=Counter()
+                    for day,count in simulation["counts"].items():
+                        weekly[week_start(day)]+=count
+                    public["probabilities"]=probability_cards({"counts":dict(weekly),"simulations":simulation["simulations"]})
+                else:
+                    public["forecast"]="Segunda vuelta · estimación en preparación"
+        else:
+            private=forecast(a,int(target))
+            if os.environ.get("PRIVATE_REPORT"): Path(os.environ["PRIVATE_REPORT"]).write_text(private)
+            if os.environ.get("PUBLISH_COARSE_FORECAST")=="true":
+                public["forecast"]=private
+                public["probabilities"]=probability_cards(forecast_details(a,int(target)))
     out=Path(out); out.mkdir(exist_ok=True)
     payload=json.dumps(public,ensure_ascii=False)
     if target and target in payload: raise ValueError("Publicación bloqueada por privacidad")
