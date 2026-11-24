@@ -98,8 +98,16 @@ def second_round_data(rows):
             "last_entered":last_entered,"last_finished":last_finished,
             "historical_reference_days":len(HISTORICAL_ADVANCES)}
 
+# Calendario comunicado para la semana del 7 al 13 de diciembre:
+# únicamente se celebrará sesión el miércoles 9.
+# Evitar que la pauta habitual o una convocatoria anterior reabra esa semana.
+EXCEPTIONAL_WEEK_2026 = {f"2026-12-{d:02d}" for d in range(7,14)}
+EXCEPTIONAL_SESSION_2026 = "2026-12-09"
+
 def active_day(day, explicit):
     key=day.isoformat()
+    if key in EXCEPTIONAL_WEEK_2026:
+        return key == EXCEPTIONAL_SESSION_2026
     if key in explicit: return True
     if key in MADRID_HOLIDAYS_2026 or key in MADRID_HOLIDAYS_2027: return False
     return day.weekday() in (0,1,2,3)

@@ -165,4 +165,14 @@ class Tests(unittest.TestCase):
         self.assertIn('app.js?v=',html)
         self.assertIn('addEventListener("click", refresh)',js)
         self.assertIn('cache: "no-store"',js)
+    def test_december_2026_exceptional_single_session(self):
+        from datetime import date
+        from second_round import active_day
+        expected={"2026-12-09"}
+        explicit={"2026-12-07","2026-12-08","2026-12-09","2026-12-10"}
+        for day in range(7,14):
+            stamp=f"2026-12-{day:02d}"
+            self.assertEqual(active_day(date.fromisoformat(stamp),explicit),
+                             stamp in expected)
+        self.assertTrue(active_day(date(2026,12,14),set()))
 if __name__=="__main__":unittest.main()
