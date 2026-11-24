@@ -157,4 +157,12 @@ class Tests(unittest.TestCase):
         self.assertTrue(simulated["central"])
         self.assertGreaterEqual(simulated["central"],"2026-11-27")
         self.assertGreaterEqual(simulated["coverage"],0.95)
+    def test_refresh_control_is_wired_and_js_cache_versioned(self):
+        root=Path(__file__).resolve().parents[1]
+        html=(root/"public"/"index.html").read_text()
+        js=(root/"public"/"app.js").read_text()
+        self.assertIn('id="refresh-now"',html)
+        self.assertIn('app.js?v=',html)
+        self.assertIn('addEventListener("click", refresh)',js)
+        self.assertIn('cache: "no-store"',js)
 if __name__=="__main__":unittest.main()

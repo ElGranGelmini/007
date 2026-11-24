@@ -27,8 +27,8 @@ function isExpectedSessionWindow() {
 }
 function describeStatus(data) {
   const synced = data.checked_at ? Date.parse(data.checked_at) : NaN;
-  const stale = !Number.isFinite(synced) || Date.now() - synced > 2 * 60 * 60 * 1000;
-  const warning = stale && isExpectedSessionWindow()
+  const stale = !Number.isFinite(synced) || Date.now() - synced > 90 * 60 * 1000;
+  const warning = stale
     ? "AVISO: SIN SINCRONIZACIÓN RECIENTE · "
     : "";
   const lastMessage = data.source_last_at
@@ -139,6 +139,8 @@ function render(data) {
 async function refresh() {
   if (isLoading) return;
   isLoading = true;
+  const refreshButton = document.getElementById("refresh-now");
+  if (refreshButton) {refreshButton.disabled = true; refreshButton.textContent = "Comprobando…";}
   try {
     // URL nueva en cada consulta: evita reutilizar una copia antigua de data.js.
     const url = new URL("data.js", document.baseURI);
@@ -162,8 +164,10 @@ async function refresh() {
     console.warn("Seguimiento no disponible:", error);
   } finally {
     isLoading = false;
+    if (refreshButton) {refreshButton.disabled = false; refreshButton.textContent = "↻ Comprobar ahora";}
   }
 }
+document.getElementById("refresh-now")?.addEventListener("click", refresh);
 refresh();
 setInterval(() => {
   if (document.visibilityState === "visible") refresh();
