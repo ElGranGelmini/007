@@ -49,6 +49,8 @@ jobs:
           assert abs((datetime.now(timezone.utc) - checked).total_seconds()) < 600
           assert data["source_last_at"]
           assert data.get("recent") is not None
+          assert data.get("phase") in ("first", "second")
+          print("Fase y fecha de jornada:", data["phase"], data["updated"])
           print("Informe generado con fuente oficial:", data["source_last_at"])
           PY
       - uses: actions/upload-pages-artifact@v3
