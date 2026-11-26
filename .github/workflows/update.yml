@@ -11,7 +11,8 @@ on:
   schedule:
     # Intentos redundantes: GitHub puede retrasar u omitir algún inicio.
     # Madrid 08:00-21:59 se comprueba al ejecutarse, también en horario de verano.
-    - cron: '7,22,37,52 * * * *'
+    # 06-20 UTC incluye 08-21 en Madrid tanto en verano como en invierno.
+    - cron: '7,22,37,52 6-20 * * *'
 
 permissions:
   contents: read
